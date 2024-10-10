@@ -1,0 +1,94 @@
+//@version=5
+indicator("Optimized EMA Bands", overlay=true, max_bars_back=1000)
+
+// Kullanıcının kaç bar geriye bakacağını belirleyebileceği input 
+stdev_mult = input.float(1.1,title='Standart Sapma Çarpani',minval=1)
+lookback_input = 1000
+lookback = math.min(lookback_input, bar_index)
+
+// Temasları saymak için fonksiyon
+temasSay(src, geriye_bak) =>
+    var float toplam_temas = 0.0
+    temas = (low <= src and high >= src) ? 1 : 0
+    toplam_temas := toplam_temas + temas
+    bar_index >= geriye_bak ? toplam_temas - nz(toplam_temas[geriye_bak]) : na
+
+// EMA'ları tanımla
+ema13 = ta.ema(close, 13)
+ema21 = ta.ema(close, 21)
+ema34 = ta.ema(close, 34)
+ema55 = ta.ema(close, 55)
+ema89 = ta.ema(close, 89)
+ema144 = ta.ema(close, 144)
+
+// Kullanıcının belirlediği bar sayısına göre her EMA için temasları say
+temas13 = temasSay(ema13, lookback)
+temas21 = temasSay(ema21, lookback)
+temas34 = temasSay(ema34, lookback)
+temas55 = temasSay(ema55, lookback)
+temas89 = temasSay(ema89, lookback)
+temas144 = temasSay(ema144, lookback)
+
+// Toplam temasları hesapla
+toplam_temas = temas13 + temas21 + temas34 + temas55 + temas89 + temas144
+
+// Sıfıra bölmeyi önlemek için kontrol
+toplam_temas := toplam_temas == 0 ? 1 : toplam_temas
+
+// Temaslara göre ağırlıkları hesapla
+a1 = temas13 / toplam_temas
+a2 = temas21 / toplam_temas
+a3 = temas34 / toplam_temas
+a4 = temas55 / toplam_temas
+a5 = temas89 / toplam_temas
+a6 = temas144 / toplam_temas
+
+// Ağırlıklı EMA'yı hesapla
+agirlikli_ema = a1 * ema13 + a2 * ema21 + a3 * ema34 + a4 * ema55 + a5 * ema89 + a6 * ema144
+
+// Yüzdelik mesafe hesaplama ve ana diziye ekleme
+var float maxPercent = na
+var float minPercent = na
+var float meanPos = na
+var float meanNeg = na
+var float stdDevPos = na
+var float stdDevNeg = na
+var percentDistArray = array.new_float()
+var posDistArray = array.new_float()
+var negDistArray = array.new_float()
+
+percentDist = 100 * (close - agirlikli_ema) / agirlikli_ema
+array.push(percentDistArray, percentDist)
+
+if percentDist > 0
+    array.push(posDistArray, percentDist)
+else
+    array.push(negDistArray, percentDist)
+
+// maxPercent, minPercent, meanPos, meanNeg ve standart sapma değerlerini hesaplama
+meanPos := array.size(posDistArray) > 0 ? array.avg(posDistArray) : na
+meanNeg := array.size(negDistArray) > 0 ? array.avg(negDistArray) : na
+stdDevPos := array.size(posDistArray) > 0 ? array.stdev(posDistArray) : na
+stdDevNeg := array.size(negDistArray) > 0 ? array.stdev(negDistArray) : na
+
+
+// Bantları hesapla
+ust_mean_band = agirlikli_ema + (meanPos * agirlikli_ema / 100)
+alt_mean_band = agirlikli_ema + (meanNeg * agirlikli_ema / 100)
+
+// Yeni bantları standart sapmaya göre hesapla
+ust_std_band = agirlikli_ema + ((meanPos + stdev_mult*stdDevPos) * agirlikli_ema / 100)
+alt_std_band = agirlikli_ema + ((meanNeg - stdev_mult*stdDevNeg) * agirlikli_ema / 100)
+
+// Ağırlıklı EMA'yı çiz
+plot(agirlikli_ema, color=color.black, linewidth = 2,title="Optimize EMA")
+
+// Bantları çiz
+p1 = plot(ust_mean_band, color=color.new(color.blue, 0), title="Üst Ortalama Band",display=display.none)
+p2 = plot(ust_std_band, color=color.new(color.red, 0), title="Üst Standart Sapma Bandı",display=display.none)
+p3 = plot(alt_mean_band, color=color.new(color.blue, 0), title="Alt Ortalama Band",display=display.none)
+p4 = plot(alt_std_band, color=color.new(color.red, 0), title="Alt Standart Sapma Bandı",display=display.none)
+
+fill(p1,p3,color.new(color.blue,80))
+fill(p1,p2,color.new(color.red,80))
+fill(p3,p4,color.new(color.green,80))
